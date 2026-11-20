@@ -24,6 +24,11 @@ on:
 permissions:
   contents: read
 
+# 同分支只保留最新一次校验，避免 push 与手动触发重复跑白耗额度
+concurrency:
+  group: config-check-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-22.04
