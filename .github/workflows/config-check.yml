@@ -1,0 +1,131 @@
+#
+# 只生成 .config 做校验，不编译（约 2~3 分钟）
+#
+# 目的：在花 2 小时编译之前，先确认
+#   1. 112M 的 DTS/设备定义能被 make 正确识别
+#   2. nikki 的 feed 能装、包名和依赖能解析
+#   3. 关键包（nikki / argon / uboot-envtools）确实被选中
+#   4. 没有误选闭源 mt_wifi
+#
+# 用法：Actions -> Config Check (no build) -> Run workflow
+#
+name: Config Check (no build)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'dts/**'
+      - 'device/**'
+      - 'configs/**'
+      - 'scripts/**'
+      - '.github/workflows/config-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: 取本仓库
+        uses: actions/checkout@v4
+
+      - name: 安装基础依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gawk gettext git \
+            libncurses5-dev libssl-dev python3-setuptools rsync unzip \
+            zlib1g-dev file wget ccache
+
+      - name: 克隆 ImmortalWrt 24.10（只取元数据，--depth 1）
+        run: |
+          git clone --depth 1 -b openwrt-24.10 \
+            https://github.com/immortalwrt/immortalwrt.git openwrt
+
+      - name: 应用 112M 补丁
+        run: bash scripts/apply-112m.sh openwrt
+
+      - name: 校验补丁是否落位
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          ls openwrt/target/linux/mediatek/dts/mt7981b-h3c-magic-nx30-pro-112m.dts \
+            || fail "DTS 未安装"
+          grep -q 'Device/h3c_magic-nx30-pro-112m' \
+            openwrt/target/linux/mediatek/image/filogic.mk || fail "设备定义未注册"
+          grep -q 'mtd_get_mac_ascii Factory ethaddr' \
+            openwrt/target/linux/mediatek/filogic/base-files/etc/board.d/02_network \
+            || fail "MAC 降级链补丁未生效"
+          echo "补丁全部落位"
+
+      - name: 加入 nikki feed 并安装
+        run: |
+          cd openwrt
+          echo "src-git nikki https://github.com/nikkinikki-org/OpenWrt-nikki.git;main" \
+            >> feeds.conf.default
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          echo "--- nikki 提供的包 ---"
+          ./scripts/feeds list -r nikki 2>/dev/null || ls -d feeds/nikki/*
+
+      - name: 生成配置
+        run: |
+          cd openwrt
+          printf '%s\n' \
+            'CONFIG_TARGET_mediatek=y' \
+            'CONFIG_TARGET_mediatek_filogic=y' \
+            'CONFIG_TARGET_mediatek_filogic_DEVICE_h3c_magic-nx30-pro-112m=y' \
+            > .config
+          make defconfig
+          cat ../configs/nx30pro-112m-immortalwrt-24.10.config >> .config
+          make defconfig
+
+      - name: 校验配置结果
+        run: |
+          cd openwrt
+          fail() { echo "::error::$1"; exit 1; }
+          echo "=== 目标设备 ==="
+          grep -E 'DEVICE_h3c_magic-nx30-pro' .config
+          grep -q 'DEVICE_h3c_magic-nx30-pro-112m=y' .config || fail "112m 设备未被选中"
+          if grep -q 'DEVICE_h3c_magic-nx30-pro-nmbm=y' .config; then
+            fail "官方 nmbm 变体也被选中"
+          fi
+
+          echo "=== 关键软件包 ==="
+          for p in luci-app-nikki luci-theme-argon uboot-envtools kmod-mt7915e \
+                   kmod-nft-socket kmod-nft-tproxy kmod-tun mihomo-meta; do
+            if grep -q "CONFIG_PACKAGE_$p=y" .config; then
+              echo "  OK   $p"
+            else
+              fail "缺少软件包 $p（依赖解析可能失败）"
+            fi
+          done
+
+          if grep -q 'CONFIG_PACKAGE_kmod-mt_wifi=y' .config; then
+            fail "误开了闭源 mt_wifi"
+          fi
+          echo "=== ROOTFS_PARTSIZE ==="
+          grep 'ROOTFS_PARTSIZE' .config
+
+      - name: 检查 Makefile 依赖可解析（不编译）
+        run: |
+          cd openwrt
+          # prepare-tmpinfo 会扫描所有包的元数据，依赖缺失会在这里暴露
+          make prepare-tmpinfo 2>&1 | tail -30
+          echo "=== luci-app-nikki 的元数据 ==="
+          if [ -f tmp/.packageinfo ]; then
+            awk '/^Package: luci-app-nikki/,/^$/' tmp/.packageinfo | head -20
+          fi
+
+      - name: 输出 .config 摘要
+        if: always()
+        run: |
+          cd openwrt
+          {
+            echo '### .config 关键项'
+            echo '```'
+            grep -E 'DEVICE_h3c_magic-nx30-pro|IMAGE_SIZE|ROOTFS_PARTSIZE|PACKAGE_(luci-app-nikki|luci-theme-argon|mihomo|uboot-envtools)' .config 2>/dev/null || echo "（无）"
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY

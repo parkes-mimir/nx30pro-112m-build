@@ -1,0 +1,71 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/*
+ * H3C Magic NX30 Pro - 112M large partition layout (NMBM)
+ *
+ * 继承自官方 mt7981b-h3c-magic-nx30-pro-nmbm.dts，只做一件事：
+ * 把 ubi 从 64M 扩到 112M，吃掉它后面四个原厂只读分区。
+ *
+ * 原厂布局（128M NAND）：
+ *   BL2        0x0000000  0x100000   1M     (只读，本布局不动)
+ *   u-boot-env 0x0100000  0x080000   0.5M
+ *   Factory    0x0180000  0x200000   2M     (只读，无线校准，本布局不动)
+ *   FIP        0x0380000  0x200000   2M     (只读，U-Boot 本体，本布局不动)
+ *   ubi        0x0580000  0x4000000  64M
+ *   pdt_data   0x4580000  0x600000   6M     <- 并入 ubi
+ *   pdt_data_1 0x4b80000  0x600000   6M     <- 并入 ubi
+ *   exp        0x5180000  0x100000   1M     <- 并入 ubi
+ *   plugin     0x5280000  0x2580000  37.5M  <- 并入 ubi
+ *
+ * 112M 布局（本文件）：
+ *   BL2 / u-boot-env / Factory / FIP 四项位置与大小完全不变（前 5.5M 一致）
+ *   ubi        0x0580000  0x7000000  112M
+ *
+ * 前提（缺一不可，否则 UBI attach 失败 -> 内核 panic 且不自动重启，只能断电）：
+ *   1. U-Boot 的 mtdparts 必须是
+ *        nmbm0:1024k(bl2),512k(u-boot-env),2048k(Factory),2048k(fip),112M(ubi)
+ *      Yuzhii 的 multi-layout FIP 在 /mtd-layout 页面切到 immortalwrt-112m
+ *   2. 本固件的 IMAGE_SIZE 必须为 114688k（见 device/*.mk）
+ *   3. 刷机前必须擦除 ubi 分区（NAND 特性，旧 UBI 元数据会干扰）
+ *
+ * 关于节点名：partition@580000 的 unit address 只编码 reg 的起始地址
+ * （0x580000），不编码长度。所以把 reg 改成 <0x580000 0x7000000>
+ * 不需要动节点名，dtc 也不会报 unit address 不匹配。
+ *
+ * 注意：本布局不保留 pdt_data_1，而原厂 board.d/02_network 正是从那里的
+ * ASCII 文件 ethaddr 读以太网 MAC。构建脚本会对 02_network 打降级补丁
+ * （pdt_data_1 -> Factory -> u-boot 环境变量），刷机前请先记录原 MAC。
+ */
+
+/dts-v1/;
+
+#include "mt7981b-h3c-magic-nx30-pro-nmbm.dts"
+
+/ {
+	/*
+	 * 刻意只改 model，compatible 保持与 nmbm 变体完全一致。
+	 *
+	 * 原因：target/linux/mediatek/filogic/base-files/etc/board.d/02_network
+	 * 按 board_name 匹配来分配 LAN/WAN 口，那里写的是
+	 *   h3c,magic-nx30-pro|h3c,magic-nx30-pro-nmbm)
+	 * 一旦把 compatible 改成新的 board 名，02_network 匹配不到，
+	 * LAN/WAN 口分不出来 -> 刷完没网。
+	 *
+	 * 两个固件靠 model 字符串区分（/tmp/sysinfo/model、LuCI 状态页可见）。
+	 */
+	model = "H3C Magic NX30 Pro 112M (NMBM layout)";
+};
+
+/* ubi: 64M (0x4000000) -> 112M (0x7000000) */
+&ubi {
+	reg = <0x0580000 0x7000000>;
+};
+
+/* 删除被 112M ubi 覆盖的四个原厂只读分区 */
+&spi_nand {
+	partitions {
+		/delete-node/ partition@4580000;	/* pdt_data   */
+		/delete-node/ partition@4b80000;	/* pdt_data_1 */
+		/delete-node/ partition@5180000;	/* exp        */
+		/delete-node/ partition@5280000;	/* plugin     */
+	};
+};

@@ -1,0 +1,208 @@
+#
+# H3C Magic NX30 Pro 112M (NMBM layout) - ImmortalWrt 24.10 云端编译
+#
+# 特点：
+#   - 官方 immortalwrt/openwrt-24.10 源码，只加两个文件（DTS + 设备定义）
+#   - 保留开源 mt76 驱动（kmod-mt7915e），不碰 MTK 闭源 mt_wifi
+#   - 保留 opkg 生态
+#   - 编进 nikki(mihomo) + argon 主题
+#   - 产物含 factory.bin（U-Boot web 可直接刷）
+#
+name: Build ImmortalWrt 24.10 112M (NX30 Pro)
+
+on:
+  workflow_dispatch:
+    inputs:
+      make_download_jobs:
+        description: 'make download 并发数'
+        default: '8'
+        required: false
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-112m-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+      - name: 1. 取本仓库（构建脚本）
+        uses: actions/checkout@v4
+
+      - name: 2. 腾出磁盘空间
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: false
+          swap-storage: false
+
+      - name: 3. 安装编译依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
+            gettext git libncurses5-dev libssl-dev python3-setuptools rsync swig \
+            unzip zlib1g-dev file wget ccache subversion
+
+      - name: 4. 克隆 ImmortalWrt 24.10
+        run: |
+          git clone --depth 1 -b openwrt-24.10 \
+            https://github.com/immortalwrt/immortalwrt.git openwrt
+          cd openwrt
+          git log -1 --format='源码基线: %H %ad %s' --date=short
+
+      - name: 5. 应用 112M 补丁（DTS + 设备定义 + MAC 降级链）
+        run: bash scripts/apply-112m.sh openwrt
+
+      - name: 6. 加入 nikki feed
+        run: |
+          cd openwrt
+          echo "src-git nikki https://github.com/nikkinikki-org/OpenWrt-nikki.git;main" \
+            >> feeds.conf.default
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          ls -d feeds/nikki/* 2>/dev/null || { echo "nikki feed 未生效"; exit 1; }
+
+      - name: 7. 生成并叠加配置
+        run: |
+          cd openwrt
+          printf '%s\n' \
+            'CONFIG_TARGET_mediatek=y' \
+            'CONFIG_TARGET_mediatek_filogic=y' \
+            'CONFIG_TARGET_mediatek_filogic_DEVICE_h3c_magic-nx30-pro-112m=y' \
+            > .config
+          make defconfig
+          cat ../configs/nx30pro-112m-immortalwrt-24.10.config >> .config
+          make defconfig
+
+      - name: 8. 硬校验配置
+        run: |
+          cd openwrt
+          fail() { echo "::error::$1"; exit 1; }
+          grep -q 'CONFIG_TARGET_mediatek_filogic_DEVICE_h3c_magic-nx30-pro-112m=y' .config \
+            || fail "目标设备未被选中"
+          if grep -q 'CONFIG_TARGET_mediatek_filogic_DEVICE_h3c_magic-nx30-pro-nmbm=y' .config; then
+            fail "官方 nmbm 变体也被选中，产物会混淆"
+          fi
+          for p in luci-app-nikki luci-theme-argon uboot-envtools kmod-mt7915e; do
+            grep -q "CONFIG_PACKAGE_$p=y" .config || fail "缺少软件包 $p"
+          done
+          # 确认没有误开闭源 mt_wifi（会与 mt76 抢射频）
+          if grep -q 'CONFIG_PACKAGE_kmod-mt_wifi=y' .config; then
+            fail "误开了闭源 mt_wifi，会与 kmod-mt7915e 冲突"
+          fi
+          echo "--- 关键项 ---"
+          grep -E 'DEVICE_h3c_magic-nx30-pro|IMAGE_SIZE|ROOTFS_PARTSIZE|luci-app-nikki|luci-theme-argon' .config
+          echo "config OK"
+
+      - name: 9. 缓存 dl
+        uses: actions/cache@v4
+        with:
+          path: openwrt/dl
+          key: dl-24.10-${{ github.sha }}
+          restore-keys: |
+            dl-24.10-
+
+      - name: 10. 缓存 ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-24.10-${{ github.sha }}
+          restore-keys: |
+            ccache-24.10-
+
+      - name: 11. 下载源码包
+        run: |
+          cd openwrt
+          make download -j${{ github.event.inputs.make_download_jobs || 8 }}
+          # 清掉下载失败留下的残片
+          find dl -size -1024c -exec rm -f {} \;
+          echo "dl 目录大小: $(du -sh dl | cut -f1)"
+
+      - name: 12. 编译
+        run: |
+          cd openwrt
+          make -j$(nproc)
+        # 失败时下面的 step 会带日志退出
+
+      - name: 13. 编译失败则用单线程重试并输出详情
+        if: failure()
+        run: |
+          cd openwrt
+          make -j1 V=s 2>&1 | tail -400
+
+      - name: 14. 汇总产物
+        if: success()
+        run: |
+          cd openwrt/bin/targets/mediatek/filogic
+          ls -la
+          {
+            echo "### 产物清单"
+            echo ''
+            echo '```'
+            ls -la | grep -E 'nx30-pro-112m|\.itb|\.bin' || ls -la
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
+          # 兜底：确认 factory.bin 存在
+          ls *112m*factory.bin || echo "::warning::没有 factory.bin，只有 sysupgrade"
+
+      - name: 15. 上传 artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: immortalwrt-h3c_magic-nx30-pro-112m
+          path: |
+            openwrt/bin/targets/mediatek/filogic/*112m*
+            openwrt/bin/targets/mediatek/filogic/sha256sums
+            openwrt/bin/targets/mediatek/filogic/profiles.json
+            openwrt/.config
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 16. 失败时上传日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: |
+            openwrt/logs/
+            openwrt/.config
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: 17. 打 tag 时发布 Release
+        if: success() && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: 'ImmortalWrt 24.10 · NX30 Pro 112M · ${{ github.ref_name }}'
+          body: |
+            H3C Magic NX30 Pro 112M 大分区固件（NMBM layout）
+
+            - 源码：immortalwrt/immortalwrt `openwrt-24.10` @ ${{ github.sha }}
+            - 驱动：**开源 mt76**（kmod-mt7915e），非 MTK 闭源 mt_wifi
+            - 包管理：opkg
+            - 内置：nikki (mihomo) + argon 主题 + 中文
+            - 分区：ubi 112M，吃掉 pdt_data / pdt_data_1 / exp / plugin
+
+            ⚠️ 刷机前必须：
+            1. U-Boot 的 mtdparts 切到 `immortalwrt-112m`（112M(ubi)）
+            2. 擦除 ubi 分区后再刷 `factory.bin`
+            3. 记录原以太网 MAC（pdt_data_1 会消失）
+          files: |
+            openwrt/bin/targets/mediatek/filogic/*112m*
+            openwrt/bin/targets/mediatek/filogic/sha256sums
+            openwrt/bin/targets/mediatek/filogic/profiles.json
+          draft: false
+          prerelease: false
