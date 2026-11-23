@@ -202,3 +202,28 @@ sha256 `8d2af4b5c71af9df1264a1b63d6d98015576e99354d53e139f61e0c37ceb0bc7`）。
 - nikki：[nikkinikki-org/OpenWrt-nikki](https://github.com/nikkinikki-org/OpenWrt-nikki)
 - U-Boot：[Yuzhii0718/bl-mt798x-dhcpd](https://github.com/Yuzhii0718/bl-mt798x-dhcpd)
 - 上游拒绝大分区的理由：[openwrt/openwrt PR #16668](https://github.com/openwrt/openwrt/pull/16668)
+
+---
+
+## 附：argon 壁纸汉化补丁（开箱即用）
+
+本仓库的 `files/` 目录包含两个覆盖文件，编译时会由 `apply-112m.sh` 第 4 步
+复制进 ImmortalWrt 源码树的 `files/`，在 rootfs 组装阶段覆盖 argon 包自带文件：
+
+- `files/usr/libexec/rpcd/luci.argon_wallpaper` — 增加 `custom` 壁纸源，从
+  `argon.@global[0].wallpaper_url` 读取任意图片 URL。
+- `files/www/luci-static/resources/view/argon-config.js` — Argon 配置页增加
+  「自定义网址」选项与输入框（已汉化）。
+
+同时写入 uci-default（`99_zzz_nx30pro_argon`），让新固件首次启动即：
+
+```
+online_wallpaper = custom
+wallpaper_url    = https://api.yppp.net/pc    ← 随机二次元横图
+```
+
+刷机后用户可在 LuCI「系统 → Argon 主题设置 → 壁纸来源」里改成任何返回图片的 URL，
+例如必应、unsplash、自己的图床等，无需重新编译。
+
+**原理**：OpenWrt 编译系统会递归复制源码树根目录 `files/` 到 rootfs，
+在软件包安装之后覆盖同名文件，因此这是让"别人刷固件就自带"的标准做法。
