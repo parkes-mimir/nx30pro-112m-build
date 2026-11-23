@@ -3,5 +3,7 @@
 # 规则: 每行一条；拉文件到临时目录 -> 校验 sha256 -> 一致才备份原文件并覆盖
 # 以后加服务(ddns/frp/...)只需在这里加一行 + 在仓库放对应文件，设备端脚本不用改
 
-797f25eb3d9d0c9499f6bb6342a461a62f32e7d71d2f594f459e6857e404821a  /usr/libexec/rpcd/luci.argon_wallpaper  files/usr/libexec/rpcd/luci.argon_wallpaper
+480cd9ab79c46a50d585cdc4e67d26b8880e6dfa0b5ce4fba5beecd669d48ea7  /usr/libexec/rpcd/luci.argon_wallpaper  files/usr/libexec/rpcd/luci.argon_wallpaper
+2425a7ee539dd069e6bf39ef9670bbbcbce093b3f677df2348a2606c36c399e4  /usr/share/ucode/luci/template/themes/argon/sysauth.ut  files/usr/share/ucode/luci/template/themes/argon/sysauth.ut
+a32021776dc1ffe0095034f424bc0cc518fdf3a9e48a67890320180f0730fb57  /www/luci-static/argon/css/cascade.css  files/www/luci-static/argon/css/cascade.css
 46ccd1650b8df5cbaf0c69b798a8f67f26b1a363cf259f1a13dd1fde0a48f123  /www/luci-static/resources/view/argon-config.js  files/www/luci-static/resources/view/argon-config.js
