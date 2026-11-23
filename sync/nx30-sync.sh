@@ -58,7 +58,9 @@ while read -r sha target rel; do
     if [ -f "$target" ]; then
         cp -p "$target" "$BACKUP_DIR/$(basename "$target").bak" 2>/dev/null
     fi
-    if install -m 0644 "$dl" "$target" 2>/dev/null; then
+    # busybox 无 install 命令，用 cat 重定向 + chmod 代替
+    if cat "$dl" > "$target" 2>/dev/null; then
+        chmod 0644 "$target" 2>/dev/null
         changed=$((changed+1))
         log "已更新 $target"
     else
