@@ -5,5 +5,7 @@
 
 480cd9ab79c46a50d585cdc4e67d26b8880e6dfa0b5ce4fba5beecd669d48ea7  /usr/libexec/rpcd/luci.argon_wallpaper  files/usr/libexec/rpcd/luci.argon_wallpaper
 2425a7ee539dd069e6bf39ef9670bbbcbce093b3f677df2348a2606c36c399e4  /usr/share/ucode/luci/template/themes/argon/sysauth.ut  files/usr/share/ucode/luci/template/themes/argon/sysauth.ut
-a32021776dc1ffe0095034f424bc0cc518fdf3a9e48a67890320180f0730fb57  /www/luci-static/argon/css/cascade.css  files/www/luci-static/argon/css/cascade.css
+099b6411aca354eec3d57d0a93f76bb448b3ce7eff965fbbef11c0920465baa9  /usr/share/ucode/luci/template/themes/argon/header_login.ut  files/usr/share/ucode/luci/template/themes/argon/header_login.ut
+020b571c1a2ba9ccd58a2bdb28ae21800bee9a246f60005d6616ccde2d24bd0e  /usr/share/ucode/luci/template/themes/argon/header.ut  files/usr/share/ucode/luci/template/themes/argon/header.ut
+d69df658efc39e0b6a75bacc7b14dbfc7730a77ec3c7d392d4ff2abbe966ace3  /www/luci-static/argon/css/cascade.css  files/www/luci-static/argon/css/cascade.css
 46ccd1650b8df5cbaf0c69b798a8f67f26b1a363cf259f1a13dd1fde0a48f123  /www/luci-static/resources/view/argon-config.js  files/www/luci-static/resources/view/argon-config.js

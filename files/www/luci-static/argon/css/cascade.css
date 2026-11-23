@@ -727,13 +727,13 @@ select[multiple="multiple"] {
   background: url(../img/blank.png) no-repeat center / cover;
   transition: all 0.5s ease;
 }
+/* 竖屏/窄屏用竖图，横屏宽屏仍用横图；!important 防止被后续 @media 覆盖 */
 @media screen and (max-width: 768px) {
-  /* 竖屏用竖图，横屏仍用横图 */
-  .login-page .main-bg-mobile {
-    display: block;
-  }
   .login-page .main-bg {
-    display: none;
+    display: none !important;
+  }
+  .login-page .main-bg-mobile {
+    display: block !important;
   }
 }
 .login-page .login-container {
