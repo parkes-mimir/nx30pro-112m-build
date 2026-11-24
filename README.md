@@ -227,3 +227,17 @@ wallpaper_url    = https://api.yppp.net/pc    ← 随机二次元横图
 
 **原理**：OpenWrt 编译系统会递归复制源码树根目录 `files/` 到 rootfs，
 在软件包安装之后覆盖同名文件，因此这是让"别人刷固件就自带"的标准做法。
+
+---
+
+## 许可证
+
+本仓库主体遵循 **GPL-2.0-only**，与上游 ImmortalWrt 主线的
+`COPYING`（`SPDX-License-Identifier: GPL-2.0-only`）保持一致，全文见根目录
+`LICENSE`。
+
+例外：`files/` 下从 luci-theme-argon 派生的壁纸/主题文件保留其原始
+**Apache-2.0** 许可和版权声明，详见 `files/LICENSES.md`。
+
+nikki / mihomo 来自独立 feed（GPL-3.0），仅在编译时引用，其源码和许可
+不随本仓库分发。
